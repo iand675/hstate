@@ -6,6 +6,7 @@ import Control.Monad (guard)
 import Control.Monad.Singletons
 import Data.Eq.Singletons
 import Data.Ord.Singletons
+import Data.Proxy
 import GHC.TypeLits
 import Text.Show.Singletons
 import Data.List (find, nub)
@@ -33,18 +34,6 @@ $(singletons [d|
       , schemaEndStates = nub end
       , schemaValidTransitions = nub transitions
       }
-
-  data WakingMachineState = Awake | Asleep
-    deriving (Show, Eq, Ord, Enum, Bounded)
-
-  data WakingMachineEvent = WakesUp | FallsAsleep
-    deriving (Show, Eq, Ord, Enum, Bounded)
-
-  wakingMachineSchema :: Schema WakingMachineState WakingMachineEvent
-  (Just wakingMachineSchema) = mkSchema [Awake] [Asleep]
-    [ (Awake, FallsAsleep, Asleep)
-    , (Asleep, WakesUp, Awake)
-    ]
 
   data BasicMachine state event = BasicMachine
     { machineSchema :: Schema state event
@@ -85,13 +74,13 @@ type family InnerType (f :: k -> Type) where
 
 mkBasicMachine 
   :: (ValidState Initial state initialStates)
-  => Sing ('Schema initialStates endStates validTransitions)
-  -> Sing state
-  -> Sing ('BasicMachine
+  => proxy ('Schema initialStates endStates validTransitions)
+  -> proxy' state
+  -> Proxy ('BasicMachine
             ('Schema initialStates endStates validTransitions)
             state
-          )
-mkBasicMachine = SBasicMachine
+           )
+mkBasicMachine _ _ = Proxy
 
 transition_ 
   :: ( nextState ~ NewState currentState event (SchemaValidTransitions schema)

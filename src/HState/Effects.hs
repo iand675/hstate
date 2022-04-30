@@ -1,13 +1,19 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 module HState.Effects 
   ( EffectRegistry
+  , Event(..)
   , emptyEffectRegistry
   , onEnter
   , onExit
+  , initializeE
   , transitionE
+  , terminateE
   ) where
 
 import Control.Monad.IO.Class
 import GHC.Exts
+import GHC.Generics
 import HState.Core
 import HState.Internal
 import Data.Function
@@ -22,6 +28,7 @@ data Event e
   = Initialize
   | Transition e
   | Terminate
+  deriving (Show, Eq, Ord, Functor, Generic)
 
 data Contextualize m context events states state = Contextualize
   { callback :: Event events -> context state -> m (context state)
@@ -103,25 +110,26 @@ onEnter f registry = registry
   { enterActions = insertAction (Proxy @schema) (enterActions registry) f
   }
 
--- initializeE ::
---      ( Monad m
---      , schema ~ 'Schema initial terminal transitions
---      , ValidState Initial currentState initial
---      )
---   => Sing schema
---   -> EffectRegistry schema m context
---   -> Sing currentState
---   -> context currentState
---   -> m (Machine schema currentState context)
--- initializeE schema effectRegistry startingState ctxt= do
---   let machine = initialize schema startingState ctxt
+initializeE ::
+     ( Monad m
+     , ValidState Initial currentState (SchemaInitialStates schema)
+     , Typeable currentState
+     , SchemaStateType schema ~ KindOf currentState
+     )
+  => proxy schema
+  -> EffectRegistry schema m context
+  -> proxy' currentState
+  -> context currentState
+  -> m (Machine schema currentState context)
+initializeE schema effectRegistry startingState ctxt= do
+  let machine = initialize schema startingState ctxt
 
---   case lookupAction (enterActions effectRegistry) startingState of
---     Nothing -> do
---       pure machine
---     Just onEnter -> do
---       context' <- onEnter Initialize ctxt
---       pure $ setContext machine context'
+  case lookupAction (enterActions effectRegistry) startingState of
+    Nothing -> do
+      pure machine
+    Just onEnter -> do
+      context' <- onEnter Initialize ctxt
+      pure $ setContext machine context'
 
 transitionE :: forall m ev schema currentState (event :: ev) nextState context. 
     ( Monad m
@@ -137,7 +145,7 @@ transitionE :: forall m ev schema currentState (event :: ev) nextState context.
   => Machine schema currentState context 
   -> EffectRegistry schema m context
   -> Sing event
-  -> (context currentState -> context nextState)
+  -> (context currentState -> m (context nextState))
   -> m (Machine schema nextState context)
 transitionE machine effectRegistry sEvent f = do
   let event = Transition (fromSing sEvent :: ev)
@@ -149,7 +157,7 @@ transitionE machine effectRegistry sEvent f = do
       context' <- onExit event $ getContext machine
       pure $ setContext machine context'
 
-  let postTransitionMachine = transition postExitHookMachine sEvent f
+  postTransitionMachine <- transitionF postExitHookMachine sEvent f
 
   case lookupAction (enterActions effectRegistry) (Proxy @nextState) of
     Nothing -> do
@@ -158,24 +166,24 @@ transitionE machine effectRegistry sEvent f = do
       context' <- onEnter event $ getContext postTransitionMachine
       pure $ setContext postTransitionMachine context'
 
--- terminateE ::
---      (Monad m)
---   => Machine schema currentState context 
---   -> EffectRegistry schema m context
---   -> m (Sing currentState, context currentState)
--- terminateE machine effectRegistry = do
---   case lookupAction (exitActions effectRegistry) (Proxy @currentState) of
---     Nothing -> do
---       pure (getState machine, getContext machine)
---     Just onExit -> do
---       context' <- onExit (getEvent machine) $ getContext machine
---       pure (getState machine, context')
+terminateE ::
+     ( Monad m
+     , Typeable currentState
+     , SingI currentState
+     , ValidState Terminal currentState (SchemaEndStates schema)
+     , SchemaStateType schema ~ KindOf currentState
+     )
+  => Machine schema currentState context 
+  -> EffectRegistry schema m context
+  -> m (Sing currentState, context currentState)
+terminateE machine effectRegistry = do
+  case lookupAction (exitActions effectRegistry) Proxy of
+    Nothing -> do
+      pure $ terminate machine
+    Just onExit -> do
+      let (st, context) = terminate machine
+      context' <- onExit Terminate context
+      pure (st, context')
 
 registryFor :: forall schema m context. EffectRegistry schema m context
 registryFor = emptyEffectRegistry
-
-test :: EffectRegistry WakingMachineSchema IO (Const ())
-test = 
-  registryFor @WakingMachineSchema
-    & onExit @'Awake (\ev ctx -> putStrLn "Bye 1" >> pure ctx)
-    & onExit @'Awake (\ev ctx -> putStrLn "Bye 2" >> pure ctx)

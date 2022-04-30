@@ -28,9 +28,9 @@ library
       HState
       HState.Core
       HState.Effects
-      HState.Internal
+      HState.Tutorial
   other-modules:
-      Paths_hstate
+      HState.Internal
   hs-source-dirs:
       src
   default-extensions:

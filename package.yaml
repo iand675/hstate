@@ -55,6 +55,8 @@ dependencies:
 
 library:
   source-dirs: src
+  other-modules:
+  - HState.Internal
 
 tests:
   hstate-test:

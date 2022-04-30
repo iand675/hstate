@@ -2,16 +2,19 @@
 module HState.Core
   ( Schema(..)
   , mkSchema
+  , sMkSchema
   , MkSchema
   , Machine
   , initialize
   , suspend
   , HState.Core.transition
+  , transitionF
   , terminate
   , getContext
   , setContext
   , modifyContext
-  , testMachine
+  -- * Re-exports
+  , MkSchemaSym0
   ) where
 import HState.Internal
 import Data.Functor.Const
@@ -20,71 +23,70 @@ import Data.Maybe.Singletons
 import Data.Eq.Singletons
 import Data.Singletons
 
-testMachine = initialize sWakingMachineSchema SAwake (Const ())
 
-data Machine (schema :: Schema states events) (currentState :: states) (context :: states -> Type) where 
+newtype Machine (schema :: Schema states events) (currentState :: states) (context :: states -> Type) where 
   Machine ::
-    { internalMachine :: Sing 
-        ('BasicMachine 
-          schema
-          currentState
-        )
-    , context :: context currentState
+    { context :: context currentState
     } -> Machine schema currentState context
 
 initialize 
-  :: ( schema ~ 'Schema initial terminal transitions
-     , ValidState Initial currentState initial
+  :: ( ValidState Initial currentState (SchemaInitialStates schema)
      )
-  => Sing schema
-  -> Sing currentState 
+  => proxy schema
+  -> proxy' currentState
   -> context currentState 
   -> Machine schema currentState context
 initialize schema startingState ctxt = 
   Machine
-    { internalMachine = mkBasicMachine schema startingState
-    , context = ctxt
+    { context = ctxt
     }
 
 suspend 
-  :: (SingKind (KindOf currentState))
+  :: (SingI currentState)
   => Machine schema currentState context 
   -> (Sing currentState, context currentState)
-suspend Machine{context, internalMachine = SBasicMachine _ st} = (st, context)
+suspend Machine{context} = (sing, context)
 
 resume
-  :: Sing schema
-  -> Sing currentState
+  :: proxy schema
+  -> proxy' currentState
   -> context currentState
   -> Machine schema currentState context
 resume schema st ctxt = Machine
-  { internalMachine = SBasicMachine schema st
-  , context = ctxt
+  { context = ctxt
   }
 
 transition
   :: ( NewState currentState event (SchemaValidTransitions schema) ~ nextState
-     , SingI nextState
      )
   => Machine schema currentState context
-  -> Sing event
+  -> proxy event
   -> (context currentState -> context nextState)
   -> Machine schema nextState context
-transition m@Machine{internalMachine, context} event f = 
-  m { internalMachine = transition_ internalMachine event
-    , context = f context
+transition m@Machine{context} event f = 
+  m { context = f context
     }
     
+transitionF
+  :: ( Functor f
+     , NewState currentState event (SchemaValidTransitions schema) ~ nextState
+     )
+  => Machine schema currentState context
+  -> proxy event
+  -> (context currentState -> f (context nextState))
+  -> f (Machine schema nextState context)
+transitionF m@Machine{context} event f = (\context' -> m { context = context' }) <$> f context
+    
 terminate 
-  :: ( ValidState Terminal currentState terminal
-     , schema ~ 'Schema initial terminal transitions
+  :: ( ValidState Terminal currentState (SchemaEndStates schema)
+     , SingI currentState
      )
   => Machine schema currentState context
   -> (Sing currentState, context currentState)
-terminate Machine{context, internalMachine = SBasicMachine _ st} = (st, context)
+terminate Machine{context} = (sing, context)
 
-currentState :: Machine schema currentState context -> Sing currentState
-currentState Machine{internalMachine = SBasicMachine _ st} = st
+currentState :: SingI currentState => Machine schema currentState context -> Sing currentState
+currentState _ = sing
 
 getContext :: Machine schema currentState context -> context currentState
 getContext = context
