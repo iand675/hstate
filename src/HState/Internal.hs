@@ -12,19 +12,6 @@ import Data.List (find, nub)
 import Data.List.Singletons
 import Data.Singletons.Base.Enum
 import Prelude.Singletons
--- data a :- b = a :- b
-
--- data a :-> b = a :-> b
-
--- data Awake
--- data WakesUp = WakesUp
--- data FallsAsleep = FallsAsleep
-
--- type Schema =
---   [ Asleep :- WakesUp :> Awake
---   , Awake :- FallsAsleep :> Asleep
---   ]
-
 
 $(singletons [d|
   data Schema state event = Schema
@@ -47,17 +34,6 @@ $(singletons [d|
       , schemaValidTransitions = nub transitions
       }
 
-  lookupTransition :: (Eq state, Eq event) => Schema state event -> state -> event -> Maybe state
-  lookupTransition schema currentState event = do
-    (_, _, newState) <- find (\(s, e, _) -> s == currentState && e == event) $ schemaValidTransitions schema
-    pure newState 
-
-  unsafeLookupTransition :: (Eq state, Eq event) => Schema state event -> state -> event -> state
-  unsafeLookupTransition schema currentState event = do
-    case lookupTransition schema currentState event of
-      Nothing -> error "Invalid transition"
-      Just s -> s
-
   data WakingMachineState = Awake | Asleep
     deriving (Show, Eq, Ord, Enum, Bounded)
 
@@ -75,19 +51,37 @@ $(singletons [d|
     , machineCurrentState :: state
     }
 
-  transition :: (Eq state, Eq event) => BasicMachine state event -> event -> Maybe (BasicMachine state event)
-  transition m e = do
-    newState <- lookupTransition (machineSchema m) (machineCurrentState m) e
-    pure $ m { machineCurrentState = newState }
   |])
 
 data Initial
 data Terminal
 
+type family NewState (currentState :: st) (event :: e) (transitions :: [(st, e, st)]) where
+  NewState currentState event '[] = TypeError ('Text "Invalid transition")
+  NewState currentState event ('(currentState, event, newState) ': _) = newState
+  NewState currentState event (_ ': transitions) = NewState currentState event transitions
+
 type family ValidState validatedAgainst (s :: k) (ss :: [k]) :: Constraint where
   ValidState validatedAgainst s '[] = TypeError (Text "Invalid " :<>: ShowType validatedAgainst :<>: Text " state: " :<>: ShowType s)
   ValidState _ s (s ': _) = ()
   ValidState validatedAgainst s (s' ': ss) = ValidState validatedAgainst s ss
+
+type family SchemaEventType (s :: Schema state event) where
+  SchemaEventType ('Schema initial terminal transitions) = EventTypeFromTransitions transitions
+
+type family EventTypeFromTransitions (transitions :: [(initial, event, terminal)]) where
+  EventTypeFromTransitions '[] = TypeError ('Text "No transitions")
+  EventTypeFromTransitions ('(_, event, _) ': _) = KindOf event
+
+type family TypeFromList (l :: [k]) where
+  TypeFromList (x ': _) = KindOf x
+  TypeFromList '[] = TypeError ('Text "Empty list")
+
+type family SchemaStateType (s :: Schema state event) where
+  SchemaStateType ('Schema initial _ _) = TypeFromList initial
+
+type family InnerType (f :: k -> Type) where
+  InnerType (f a) = a
 
 mkBasicMachine 
   :: (ValidState Initial state initialStates)
@@ -99,6 +93,20 @@ mkBasicMachine
           )
 mkBasicMachine = SBasicMachine
 
+transition_ 
+  :: ( nextState ~ NewState currentState event (SchemaValidTransitions schema)
+     , SingI nextState
+     )
+  => Sing ('BasicMachine
+            schema
+            currentState
+          )
+  -> Sing event 
+  -> Sing ('BasicMachine
+            schema
+            nextState
+          )
+transition_ (SBasicMachine schema _) _ = SBasicMachine schema sing
 -- action
 -- context
 -- state

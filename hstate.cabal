@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       HState
+      HState.Core
       HState.Effects
       HState.Internal
   other-modules:
@@ -57,10 +58,13 @@ library
       UndecidableInstances
   build-depends:
       base >=4.7 && <5
+    , containers
+    , primitive
     , singletons
     , singletons-base
     , singletons-th
     , typerep-map
+    , vector
   default-language: Haskell2010
 
 test-suite hstate-test
@@ -96,9 +100,12 @@ test-suite hstate-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , containers
     , hstate
+    , primitive
     , singletons
     , singletons-base
     , singletons-th
     , typerep-map
+    , vector
   default-language: Haskell2010
