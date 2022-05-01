@@ -34,12 +34,24 @@ data Contextualize m context events states state = Contextualize
   { callback :: Event events -> context state -> m (context state)
   }
 
+instance Monad m => Semigroup (Contextualize m context events states state) where
+  (Contextualize c1) <> (Contextualize c2) = Contextualize $ \e c -> do
+    c1 e c >>= c2 e
+
+instance Monad m => Monoid (Contextualize m context events states state) where
+  mempty = Contextualize $ \_ c -> pure c
+
 instance (Typeable state) => Show (Contextualize m context events states state) where
   show x = "Contextualize#" ++ show (typeRep x)
 
--- TODO: TypeRepMap (Const callbackTypeThing)
 newtype Actions m context events states = Actions (T.TypeRepMap (Contextualize m context events states))
   deriving (Show)
+
+instance Monad m => Semigroup (Actions m context events states) where
+  (Actions x) <> (Actions y) = Actions $ T.unionWith (<>) x y
+
+instance Monad m => Monoid (Actions m context events states) where
+  mempty = Actions T.empty
 
 empty :: Actions m context events states
 empty = Actions T.empty
@@ -75,6 +87,12 @@ data EffectRegistry (schema :: Schema states events) (m :: Type -> Type) (contex
   { exitActions :: Actions m context (SchemaEventType schema) (SchemaStateType schema)
   , enterActions :: Actions m context (SchemaEventType schema) (SchemaStateType schema)
   } deriving (Show)
+
+instance Monad m => Semigroup (EffectRegistry schema m context) where
+  (EffectRegistry enter1 exit1) <> (EffectRegistry enter2 exit2) = EffectRegistry (enter1 <> enter2) (exit1 <> exit2)
+
+instance Monad m => Monoid (EffectRegistry schema m context) where
+  mempty = EffectRegistry mempty mempty
 
 emptyEffectRegistry :: EffectRegistry schema m context
 emptyEffectRegistry = EffectRegistry
@@ -113,6 +131,7 @@ onEnter f registry = registry
 initializeE ::
      ( Monad m
      , ValidState Initial currentState (SchemaInitialStates schema)
+     , AllTransitionsAreTypeableFrom currentState (SchemaValidTransitions schema)
      , Typeable currentState
      , SchemaStateType schema ~ KindOf currentState
      )
@@ -141,8 +160,9 @@ transitionE :: forall m ev schema currentState (event :: ev) nextState context.
     , SchemaStateType schema ~ KindOf currentState
     , SchemaEventType schema ~ ev
     , nextState ~ NewState currentState event (SchemaValidTransitions schema)
+    , AllTransitionsAreTypeableFrom nextState (SchemaValidTransitions schema)
     )
-  => Machine schema currentState context 
+  => Machine schema currentState context
   -> EffectRegistry schema m context
   -> Sing event
   -> (context currentState -> m (context nextState))
@@ -184,6 +204,3 @@ terminateE machine effectRegistry = do
       let (st, context) = terminate machine
       context' <- onExit Terminate context
       pure (st, context')
-
-registryFor :: forall schema m context. EffectRegistry schema m context
-registryFor = emptyEffectRegistry

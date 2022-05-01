@@ -7,6 +7,7 @@ import Control.Monad.Singletons
 import Data.Eq.Singletons
 import Data.Ord.Singletons
 import Data.Proxy
+import Data.Typeable
 import GHC.TypeLits
 import Text.Show.Singletons
 import Data.List (find, nub)
