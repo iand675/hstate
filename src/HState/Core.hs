@@ -111,7 +111,7 @@ modifyContext m@Machine{context} f = m
   }
 
 setContext :: Machine schema currentState context -> context currentState -> Machine schema currentState context
-setContext m@Machine{context} ctxt = m
+setContext m ctxt = m
   { context = ctxt
   }
 
