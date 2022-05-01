@@ -30,43 +30,41 @@ data Event e
   | Terminate
   deriving (Show, Eq, Ord, Functor, Generic)
 
-data Contextualize m context events states state = Contextualize
-  { callback :: Event events -> context state -> m (context state)
+data Contextualize schema m context state = Contextualize
+  { callback :: Event (SchemaEventType schema) -> context state -> m (context state)
   }
 
-instance Monad m => Semigroup (Contextualize m context events states state) where
+instance Monad m => Semigroup (Contextualize schema m context state) where
   (Contextualize c1) <> (Contextualize c2) = Contextualize $ \e c -> do
     c1 e c >>= c2 e
 
-instance Monad m => Monoid (Contextualize m context events states state) where
+instance Monad m => Monoid (Contextualize schema m context state) where
   mempty = Contextualize $ \_ c -> pure c
 
-instance (Typeable state) => Show (Contextualize m context events states state) where
+instance (Typeable state) => Show (Contextualize schema m context state) where
   show x = "Contextualize#" ++ show (typeRep x)
 
-newtype Actions m context events states = Actions (T.TypeRepMap (Contextualize m context events states))
+newtype Actions schema m context = Actions (T.TypeRepMap (Contextualize schema m context))
   deriving (Show)
 
-instance Monad m => Semigroup (Actions m context events states) where
+instance Monad m => Semigroup (Actions schema m context) where
   (Actions x) <> (Actions y) = Actions $ T.unionWith (<>) x y
 
-instance Monad m => Monoid (Actions m context events states) where
+instance Monad m => Monoid (Actions schema m context) where
   mempty = Actions T.empty
 
-empty :: Actions m context events states
+empty :: Actions schema m context
 empty = Actions T.empty
 
-insertAction :: forall schema m context event state thisState proxy. 
+insertAction :: forall schema m context thisState proxy. 
     ( Monad m
     , Typeable thisState
-    , KindOf thisState ~ state
-    , SchemaStateType schema ~ state
-    , SchemaEventType schema ~ event
+    , KindOf thisState ~ SchemaStateType schema
     )
   => proxy schema
-  -> Actions m context event state
-  -> (Event event -> context thisState -> m (context thisState)) 
-  -> Actions m context event state
+  -> Actions schema m context
+  -> (Event (SchemaEventType schema) -> context thisState -> m (context thisState)) 
+  -> Actions schema m context
 insertAction schema (Actions m) f = 
   Actions $ 
   T.alter go m
@@ -77,15 +75,15 @@ insertAction schema (Actions m) f =
       f e c'
 
 lookupAction 
-  :: (KindOf state ~ states, Typeable state) 
-  => Actions m context events states 
+  :: (KindOf state ~ SchemaStateType schema, Typeable state) 
+  => Actions schema m context
   -> proxy state 
-  -> Maybe (Event events -> context state -> m (context state))
+  -> Maybe (Event (SchemaEventType schema) -> context state -> m (context state))
 lookupAction (Actions m) st = fmap callback $ T.lookup m
 
 data EffectRegistry (schema :: Schema states events) (m :: Type -> Type) (context :: states -> Type) = EffectRegistry
-  { exitActions :: Actions m context (SchemaEventType schema) (SchemaStateType schema)
-  , enterActions :: Actions m context (SchemaEventType schema) (SchemaStateType schema)
+  { exitActions :: Actions schema m context
+  , enterActions :: Actions schema m context
   } deriving (Show)
 
 instance Monad m => Semigroup (EffectRegistry schema m context) where
