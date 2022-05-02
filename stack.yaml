@@ -42,7 +42,6 @@ packages:
 #
 extra-deps:
 - typerep-map-0.5.0.0
-
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

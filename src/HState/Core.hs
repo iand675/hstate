@@ -10,22 +10,21 @@ module HState.Core
   , AllTransitionsAreTypeableFrom
   , initialize
   , suspend
+  , resume
   , HState.Core.transition
   , transitionF
   , terminate
   , getContext
   , setContext
+  , currentState
   , modifyContext
   -- * Re-exports
   , MkSchemaSym0
   ) where
 import HState.Internal
-import Data.Functor.Const
 import Data.Kind
 import Data.Maybe.Singletons
-import Data.Eq.Singletons
 import Data.Singletons
-import Data.Singletons.Decide
 import Data.Typeable
 
 data MachineInAnyState (s :: Schema state event) (c :: state -> Type) where
@@ -44,14 +43,14 @@ data Machine (schema :: Schema states events) (currentState :: states) (context 
     { context :: context currentState } -> Machine schema currentState context
 
 initialize 
-  :: ( ValidState Initial currentState (SchemaInitialStates schema)
+  :: ( EventValidityForState currentState (SchemaInitialStates schema) ~ 'Valid
      , AllTransitionsAreTypeableFrom currentState (SchemaValidTransitions schema)
      )
   => proxy schema
   -> proxy' currentState
   -> context currentState 
   -> Machine schema currentState context
-initialize schema startingState ctxt = 
+initialize _ _startingState ctxt = 
   Machine
     { context = ctxt
     }
@@ -78,7 +77,7 @@ transition
   -> proxy event
   -> (context currentState -> context nextState)
   -> Machine schema nextState context
-transition (Machine context) event f = Machine $ f context
+transition (Machine context) _event f = Machine $ f context
 
 transitionF
   :: ( AllTransitionsAreTypeableFrom nextState (SchemaValidTransitions schema)
@@ -89,10 +88,10 @@ transitionF
   -> proxy event
   -> (context currentState -> f (context nextState))
   -> f (Machine schema nextState context)
-transitionF m@Machine{context} event f = (\context' -> Machine context') <$> f context
+transitionF Machine{context} _event f = (\context' -> Machine context') <$> f context
     
 terminate 
-  :: ( ValidState Terminal currentState (SchemaEndStates schema)
+  :: ( EventValidityForState currentState (SchemaEndStates schema) ~ 'Valid
      , SingI currentState
      )
   => Machine schema currentState context

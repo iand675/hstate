@@ -10,7 +10,7 @@ import HState.Effects
 import Data.Eq.Singletons
 import Data.Ord.Singletons
 import Prelude.Singletons hiding (Const)
-import Text.Show.Singletons
+import HState.Internal
 
 $(singletons [d|
 
@@ -31,15 +31,31 @@ $(singletons [d|
 deriving instance Show WakingMachineState
 deriving instance Show WakingMachineEvent
 
+testMachine :: Machine WakingMachineSchema 'Awake (Const ())
 testMachine = initialize sWakingMachineSchema SAwake (Const ())
 
 test :: EffectRegistry WakingMachineSchema IO (Const ())
 test = 
   emptyEffectRegistry @WakingMachineSchema
-    & onExit @'Awake (\ev ctx -> putStrLn "Goodnight" >> pure ctx)
-    & onEnter @'Asleep (\ev ctx -> putStrLn "ZZZZ" >> pure ctx)
-    & onExit @'Asleep (\ev ctx -> putStrLn "ZZZZ... snort... Huh?" >> pure ctx)
-    & onEnter @'Awake (\ev ctx -> putStrLn "Good morning" >> pure ctx)
+    & onEnter @'Awake (\_ev ctx -> putStrLn "Good morning" >> pure ctx)
+    & onExit @'Awake (\_ev ctx -> putStrLn "Goodnight" >> pure ctx)
+    & onEnter @'Asleep asleepEnter
+    & onExit @'Asleep asleepExit
+  where
+    asleepExit :: Event 'Exit WakingMachineSchema 'Asleep 'Valid -> Const () 'Asleep -> IO (Const () 'Asleep)
+    asleepExit ev ctx = do
+      case ev of
+        Terminate -> putStrLn "Wrapping up"
+        Transition _ -> putStrLn "ZZZZ... snort... Huh?"
+
+      pure ctx
+
+    asleepEnter :: Event 'Enter WakingMachineSchema 'Asleep 'Valid -> Const () 'Asleep -> IO (Const () 'Asleep)
+    asleepEnter ev ctx = do
+      case ev of
+        Transition _ -> putStrLn "ZZZZ"
+
+      pure ctx
 
 sendWithoutKnowledge 
   :: MachineInAnyState WakingMachineSchema (Const ())
@@ -71,3 +87,12 @@ main = do
         void $ terminateE m test
         putStrLn "Sleep the day away!"
       
+
+-- newtype Subset as = Subset
+--     { runSubset :: KindOf (TypeFromList as) -> Decision (TypeFromList as)
+--     }
+
+-- encodeSubset :: Subset [FallsAsleep] 
+-- encodeSubset = Subset $ \case
+--   SFallsAsleep -> Provide SFallsAsleep
+--   _ -> Disproved _

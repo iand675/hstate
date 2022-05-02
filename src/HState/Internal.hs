@@ -6,13 +6,10 @@ import Control.Monad (guard)
 import Control.Monad.Singletons
 import Data.Eq.Singletons
 import Data.Ord.Singletons
-import Data.Proxy
-import Data.Typeable
 import GHC.TypeLits
 import Text.Show.Singletons
-import Data.List (find, nub)
+import Data.List (nub)
 import Data.List.Singletons
-import Data.Singletons.Base.Enum
 import Prelude.Singletons
 
 $(singletons [d|
@@ -41,6 +38,8 @@ $(singletons [d|
     , machineCurrentState :: state
     }
 
+  data Direction = Enter | Exit
+  data Validity = Valid | Invalid
   |])
 
 data Initial
@@ -52,7 +51,7 @@ type family NewState (currentState :: st) (event :: e) (transitions :: [(st, e, 
   NewState currentState event (_ ': transitions) = NewState currentState event transitions
 
 type family ValidState validatedAgainst (s :: k) (ss :: [k]) :: Constraint where
-  ValidState validatedAgainst s '[] = TypeError (Text "Invalid " :<>: ShowType validatedAgainst :<>: Text " state: " :<>: ShowType s)
+  ValidState validatedAgainst s '[] = TypeError ('Text "Invalid " ':<>: 'ShowType validatedAgainst ':<>: 'Text " state: " ':<>: 'ShowType s)
   ValidState _ s (s ': _) = ()
   ValidState validatedAgainst s (s' ': ss) = ValidState validatedAgainst s ss
 
@@ -70,8 +69,21 @@ type family TypeFromList (l :: [k]) where
 type family SchemaStateType (s :: Schema state event) where
   SchemaStateType ('Schema initial _ _) = TypeFromList initial
 
+type family EventValidityForState (s :: st) (ss :: [st]) :: Validity where
+  EventValidityForState s (s ': ss) = 'Valid
+  EventValidityForState s (s' ': ss) = EventValidityForState s ss
+  EventValidityForState s '[] = 'Invalid
+
 type family InnerType (f :: k -> Type) where
   InnerType (f a) = a
+
+type family EventTriggersForTransition (d :: Direction) (e :: event) (s :: state) (ts :: [(state, event, state)]) :: Constraint where
+  EventTriggersForTransition 'Exit e s '[] = TypeError ('Text "Event does not trigger exiting this state")
+  EventTriggersForTransition 'Exit e s ('(s, e, _) ': _) = ()
+  EventTriggersForTransition 'Exit e s (_ ': ts) = EventTriggersForTransition 'Enter e s ts
+  EventTriggersForTransition 'Enter e s '[] = TypeError ('Text "Event does not trigger entering this state")
+  EventTriggersForTransition 'Enter e s ('(_, e, s) ': _) = ()
+  EventTriggersForTransition 'Enter e s (_ ': ts) = EventTriggersForTransition 'Exit e s ts
 
 mkBasicMachine 
   :: (ValidState Initial state initialStates)
