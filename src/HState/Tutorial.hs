@@ -55,7 +55,7 @@ test =
     asleepEnter :: Event 'Enter WakingMachineSchema 'Asleep 'Valid -> Const () 'Asleep -> IO (Const () 'Asleep)
     asleepEnter ev ctx = do
       case ev of
-        Transition st -> putStrLn "Falling asleep" $> ctx
+        Transition _ -> putStrLn "Falling asleep" $> ctx
 
 sendWithoutKnowledge
   :: MachineInAnyState WakingMachineSchema (Const ())
