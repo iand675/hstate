@@ -22,7 +22,7 @@ import qualified Data.TypeRepMap as T
 
 data Event (direction :: Direction) (schema :: Schema states events) (state :: states) (validity :: Validity) where
   Initialize :: Event 'Enter schema state (EventValidityForState state (SchemaInitialStates schema))
-  Transition :: SchemaEventType schema -> Event direction schema state 'Valid
+  Transition :: Sing (event :: events) -> Event direction schema state (EventTriggersForTransition direction state (SchemaValidTransitions schema) event)
   Terminate :: Event 'Exit schema state (EventValidityForState state (SchemaEndStates schema))
 
 data Contextualize (direction :: Direction) schema m context state = Contextualize
@@ -93,6 +93,8 @@ emptyEffectRegistry = EffectRegistry
   , enterActions = empty
   }
 
+type ExitEvent schema state = Event 'Exit schema state 'Valid
+
 onExit 
   :: forall state events m context schema.
     ( Monad m
@@ -100,12 +102,14 @@ onExit
     , SchemaEventType schema ~ events
     , Typeable state
     )
-  => (Event 'Exit schema state 'Valid -> context state -> m (context state))
+  => (ExitEvent schema state -> context state -> m (context state))
   -> EffectRegistry schema m context
   -> EffectRegistry schema m context
 onExit f registry = registry 
   { exitActions = insertAction (Proxy @schema) (exitActions registry) f
   }
+
+type EnterEvent schema state = Event 'Enter schema state 'Valid
 
 onEnter 
   :: forall state events m context schema.
@@ -114,7 +118,7 @@ onEnter
     , SchemaEventType schema ~ events
     , Typeable state
     )
-  => (Event 'Enter schema state 'Valid -> context state -> m (context state))
+  => (EnterEvent schema state -> context state -> m (context state))
   -> EffectRegistry schema m context
   -> EffectRegistry schema m context
 onEnter f registry = registry 
@@ -154,8 +158,8 @@ transitionE :: forall m ev schema currentState (event :: ev) nextState context.
     , SchemaEventType schema ~ ev
     , nextState ~ NewState currentState event (SchemaValidTransitions schema)
     , AllTransitionsAreTypeableFrom nextState (SchemaValidTransitions schema)
-    -- , EventTriggersForTransition Exit event currentState (SchemaValidTransitions schema)
-    -- , EventTriggersForTransition Enter event nextState (SchemaValidTransitions schema)
+    , EventTriggersForTransition 'Exit currentState (SchemaValidTransitions schema) event ~ 'Valid
+    , EventTriggersForTransition 'Enter nextState (SchemaValidTransitions schema) event ~ 'Valid
     )
   => Machine schema currentState context
   -> EffectRegistry schema m context
@@ -163,13 +167,12 @@ transitionE :: forall m ev schema currentState (event :: ev) nextState context.
   -> (context currentState -> m (context nextState))
   -> m (Machine schema nextState context)
 transitionE machine effectRegistry sEvent f = do
-  let event = fromSing sEvent :: ev
 
   postExitHookMachine <- case lookupAction (exitActions effectRegistry) (Proxy @currentState) of
     Nothing -> do
       pure machine
     Just exitCallback -> do
-      context' <- exitCallback (Transition event) $ getContext machine
+      context' <- exitCallback (Transition sEvent) $ getContext machine
       pure $ setContext machine context'
 
   postTransitionMachine <- transitionF postExitHookMachine sEvent f
@@ -178,7 +181,7 @@ transitionE machine effectRegistry sEvent f = do
     Nothing -> do
       pure postTransitionMachine
     Just enterCallback -> do
-      context' <- enterCallback (Transition event) $ getContext postTransitionMachine
+      context' <- enterCallback (Transition sEvent) $ getContext postTransitionMachine
       pure $ setContext postTransitionMachine context'
 
 terminateE ::

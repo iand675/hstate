@@ -11,6 +11,7 @@ import Data.Eq.Singletons
 import Data.Ord.Singletons
 import Prelude.Singletons hiding (Const)
 import HState.Internal
+import Data.Functor
 
 $(singletons [d|
 
@@ -35,7 +36,7 @@ testMachine :: Machine WakingMachineSchema 'Awake (Const ())
 testMachine = initialize sWakingMachineSchema SAwake (Const ())
 
 test :: EffectRegistry WakingMachineSchema IO (Const ())
-test = 
+test =
   emptyEffectRegistry @WakingMachineSchema
     & onEnter @'Awake (\_ev ctx -> putStrLn "Good morning" >> pure ctx)
     & onExit @'Awake (\_ev ctx -> putStrLn "Goodnight" >> pure ctx)
@@ -46,20 +47,19 @@ test =
     asleepExit ev ctx = do
       case ev of
         Terminate -> putStrLn "Wrapping up"
-        Transition _ -> putStrLn "ZZZZ... snort... Huh?"
+        Transition st -> case st of
+          SWakesUp -> putStrLn "Waking up"
 
       pure ctx
 
     asleepEnter :: Event 'Enter WakingMachineSchema 'Asleep 'Valid -> Const () 'Asleep -> IO (Const () 'Asleep)
     asleepEnter ev ctx = do
       case ev of
-        Transition _ -> putStrLn "ZZZZ"
+        Transition st -> putStrLn "Falling asleep" $> ctx
 
-      pure ctx
-
-sendWithoutKnowledge 
+sendWithoutKnowledge
   :: MachineInAnyState WakingMachineSchema (Const ())
-  -> WakingMachineEvent 
+  -> WakingMachineEvent
   -> IO (MachineInAnyState WakingMachineSchema (Const ()))
 sendWithoutKnowledge (MachineInAnyState m) ev = withSomeSing ev $ \evI -> case currentStateI m of
   SAwake -> case evI of
@@ -77,22 +77,12 @@ main :: IO ()
 main = do
   machine <- initializeE sWakingMachineSchema test SAwake (Const ())
   runningMachine <- foldM
-    sendWithoutKnowledge 
-    (MachineInAnyState machine :: MachineInAnyState WakingMachineSchema (Const ())) 
-    [WakesUp, FallsAsleep, WakesUp, FallsAsleep] 
+    sendWithoutKnowledge
+    (MachineInAnyState machine :: MachineInAnyState WakingMachineSchema (Const ()))
+    [WakesUp, FallsAsleep, WakesUp, FallsAsleep]
   case runningMachine of
     MachineInAnyState m -> case currentStateI m of
       SAwake -> putStrLn "I'm not done yet!"
       SAsleep -> do
         void $ terminateE m test
         putStrLn "Sleep the day away!"
-      
-
--- newtype Subset as = Subset
---     { runSubset :: KindOf (TypeFromList as) -> Decision (TypeFromList as)
---     }
-
--- encodeSubset :: Subset [FallsAsleep] 
--- encodeSubset = Subset $ \case
---   SFallsAsleep -> Provide SFallsAsleep
---   _ -> Disproved _

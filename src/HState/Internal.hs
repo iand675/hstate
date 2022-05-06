@@ -40,6 +40,13 @@ $(singletons [d|
 
   data Direction = Enter | Exit
   data Validity = Valid | Invalid
+
+  eventTriggersForTransition :: (Eq state, Eq event) => Direction -> state -> [(state, event, state)] -> event -> Validity
+  eventTriggersForTransition Exit s ts e = if any (\(st', e', _) -> s == st' && e == e') ts 
+    then Valid else Invalid
+  eventTriggersForTransition Enter s ts e = if any (\(_, e', st') -> s == st' && e == e') ts 
+    then Valid else Invalid
+
   |])
 
 data Initial
@@ -76,14 +83,6 @@ type family EventValidityForState (s :: st) (ss :: [st]) :: Validity where
 
 type family InnerType (f :: k -> Type) where
   InnerType (f a) = a
-
-type family EventTriggersForTransition (d :: Direction) (e :: event) (s :: state) (ts :: [(state, event, state)]) :: Constraint where
-  EventTriggersForTransition 'Exit e s '[] = TypeError ('Text "Event does not trigger exiting this state")
-  EventTriggersForTransition 'Exit e s ('(s, e, _) ': _) = ()
-  EventTriggersForTransition 'Exit e s (_ ': ts) = EventTriggersForTransition 'Enter e s ts
-  EventTriggersForTransition 'Enter e s '[] = TypeError ('Text "Event does not trigger entering this state")
-  EventTriggersForTransition 'Enter e s ('(_, e, s) ': _) = ()
-  EventTriggersForTransition 'Enter e s (_ ': ts) = EventTriggersForTransition 'Exit e s ts
 
 mkBasicMachine 
   :: (ValidState Initial state initialStates)
