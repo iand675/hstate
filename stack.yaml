@@ -32,6 +32,7 @@ resolver:
 packages:
 - hstate
 - hstate-graphviz
+- hstate-idempotency
 
 # Dependency packages to be pulled from upstream that are not in the resolver.
 # These entries can reference officially published versions as well as
@@ -44,6 +45,7 @@ packages:
 #
 extra-deps:
 - typerep-map-0.5.0.0
+- indexed-extras-0.2
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

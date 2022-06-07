@@ -216,7 +216,7 @@ transitionE machine effectRegistry sEvent f = do
       context' <- enterCallback (Transition sEvent) $ getContext postTransitionMachine
       pure $ setContext postTransitionMachine context'
 
-type ValidTerminalEvent schema state context =
+type ValidTerminalEvent schema state =
   ( Typeable state
   , SingI state
   , EventValidityForState state (SchemaEndStates schema) ~ 'Valid
@@ -226,7 +226,7 @@ type ValidTerminalEvent schema state context =
 -- | Call provided 'onExit' callbacks for the current state, returning the current context.
 terminateE ::
      ( Monad m
-     , ValidTerminalEvent schema currentState context
+     , ValidTerminalEvent schema currentState
      )
   => Machine schema currentState context  -- ^ The machine to "terminate". Practically speaking, all of the meaningful termination activity comes from the 'EffectRegistry'
   -> EffectRegistry schema m context -- ^ Effects performed on exit should be registered here
